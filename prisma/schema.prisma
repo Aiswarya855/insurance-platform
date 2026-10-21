@@ -1,0 +1,87 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("CUSTOMER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  quotes    Quote[]
+  policies  Policy[]
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  category    String
+  description String?
+  basePrice   Float
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  quotes      Quote[]
+  policies    Policy[]
+}
+
+model Quote {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  productId      Int
+  vehicleNumber  String?
+  vehicleType    String?
+  coverageAmount Float
+  premium        Float
+  status         String   @default("GENERATED")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+  product        Product  @relation(fields: [productId], references: [id])
+  policy         Policy?
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+}
+
+model Policy {
+  id           Int      @id @default(autoincrement())
+  policyNumber String   @unique
+  userId       Int
+  productId    Int
+  quoteId      Int      @unique
+  premium      Float
+  startDate    DateTime
+  endDate      DateTime
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  payments     Payment[]
+  user         User     @relation(fields: [userId], references: [id])
+  product      Product  @relation(fields: [productId], references: [id])
+  quote        Quote    @relation(fields: [quoteId], references: [id])
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  policyId      Int
+  transactionId String   @unique
+  amount        Float
+  status        String   @default("PENDING")
+  eventId       String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  policy        Policy   @relation(fields: [policyId], references: [id])
+  @@index([policyId])
+  @@index([status])
+}
