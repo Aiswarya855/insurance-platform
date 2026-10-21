@@ -1,3 +1,4 @@
+
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
@@ -26,14 +27,20 @@ export const authenticate = (
         }
 
         const token = authHeader.split(" ")[1];
+        const secret = process.env.JWT_SECRET;
 
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_SECRET as string
-        ) as JwtPayload;
+        if (!secret) {
+            console.error("JWT_SECRET is not configured");
+
+            return res.status(500).json({
+                success: false,
+                message: "Internal server error",
+            });
+        }
+
+        const decoded = jwt.verify(token, secret) as JwtPayload;
 
         req.user = decoded;
-
         next();
     } catch (error) {
         return res.status(401).json({
