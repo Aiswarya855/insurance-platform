@@ -27,6 +27,14 @@ export const authenticate = (
         }
 
         const token = authHeader.split(" ")[1];
+
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication token required",
+            });
+        }
+
         const secret = process.env.JWT_SECRET;
 
         if (!secret) {
@@ -38,9 +46,30 @@ export const authenticate = (
             });
         }
 
-        const decoded = jwt.verify(token, secret) as JwtPayload;
+        const decoded = jwt.verify(token, secret, {
+            algorithms: ["HS256"],
+        });
 
-        req.user = decoded;
+        if (
+            typeof decoded !== "object" ||
+            decoded === null ||
+            typeof decoded.userId !== "number" ||
+            !Number.isInteger(decoded.userId) ||
+            decoded.userId <= 0 ||
+            typeof decoded.role !== "string" ||
+            decoded.role.trim() === ""
+        ) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid token payload",
+            });
+        }
+
+        req.user = {
+            userId: decoded.userId,
+            role: decoded.role,
+        };
+
         next();
     } catch (error) {
         return res.status(401).json({
