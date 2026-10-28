@@ -1,3 +1,4 @@
+
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 
@@ -19,9 +20,11 @@ export const verifyWebhookSignature = (
         const secret = process.env.WEBHOOK_SECRET;
 
         if (!secret) {
+            console.error("WEBHOOK_SECRET is not configured");
+
             return res.status(500).json({
                 success: false,
-                message: "Webhook secret not configured",
+                message: "Internal server error",
             });
         }
 
@@ -32,12 +35,13 @@ export const verifyWebhookSignature = (
             .update(payload)
             .digest("hex");
 
-        const isValid = crypto.timingSafeEqual(
-            Buffer.from(signature),
-            Buffer.from(expectedSignature)
-        );
+        const receivedBuffer = Buffer.from(signature, "utf8");
+        const expectedBuffer = Buffer.from(expectedSignature, "utf8");
 
-        if (!isValid) {
+        if (
+            receivedBuffer.length !== expectedBuffer.length ||
+            !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+        ) {
             return res.status(401).json({
                 success: false,
                 message: "Invalid webhook signature",

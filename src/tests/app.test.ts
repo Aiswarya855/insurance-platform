@@ -2,6 +2,7 @@
 import request from "supertest";
 import app from "../app";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 describe("GET /", () => {
     it("should return API running message", async () => {
@@ -96,3 +97,54 @@ describe("Admin authorization", () => {
         expect(response.body.message).toBe("Access denied");
     });
 });
+
+
+describe("Payment webhook signature", () => {
+    const payload = {
+        eventId: "test-event-001",
+        paymentId: 999999,
+        status: "SUCCESS",
+    };
+
+    it("should reject a webhook without a signature", async () => {
+        const response = await request(app)
+            .post("/api/webhooks/payment")
+            .send(payload);
+
+        expect(response.status).toBe(401);
+        expect(response.body.message).toBe("Webhook signature missing");
+    });
+
+    it("should reject a webhook with an invalid signature", async () => {
+        const response = await request(app)
+            .post("/api/webhooks/payment")
+            .set("x-webhook-signature", "invalid-signature")
+            .send(payload);
+
+        expect(response.status).toBe(401);
+        expect(response.body.message).toBe("Invalid webhook signature");
+    });
+
+    it("should accept a webhook with a valid signature", async () => {
+        const secret = process.env.WEBHOOK_SECRET;
+
+        if (!secret) {
+            throw new Error("WEBHOOK_SECRET is not configured for tests");
+        }
+
+        const signature = crypto
+            .createHmac("sha256", secret)
+            .update(JSON.stringify(payload))
+            .digest("hex");
+
+        const response = await request(app)
+            .post("/api/webhooks/payment")
+            .set("x-webhook-signature", signature)
+            .send(payload);
+
+        // Signature verification should pass.
+        // The controller may return another status if the payment doesn't exist.
+        expect(response.status).not.toBe(401);
+    });
+});
+
