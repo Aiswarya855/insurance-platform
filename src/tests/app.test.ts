@@ -1,6 +1,7 @@
 
 import request from "supertest";
 import app from "../app";
+import jwt from "jsonwebtoken";
 
 describe("GET /", () => {
     it("should return API running message", async () => {
@@ -63,5 +64,35 @@ describe("JWT authentication", () => {
 
         expect(response.status).toBe(401);
         expect(response.body.success).toBe(false);
+    });
+});
+
+describe("Admin authorization", () => {
+    it("should reject a valid token with a non-admin role", async () => {
+        const secret = process.env.JWT_SECRET;
+
+        if (!secret) {
+            throw new Error("JWT_SECRET is not configured for tests");
+        }
+
+        const token = jwt.sign(
+            {
+                userId: 999,
+                role: "USER",
+            },
+            secret,
+            {
+                algorithm: "HS256",
+                expiresIn: "5m",
+            }
+        );
+
+        const response = await request(app)
+            .get("/api/admin/users")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toBe("Access denied");
     });
 });
