@@ -1,3 +1,4 @@
+
 import request from "supertest";
 import app from "../app";
 
@@ -43,5 +44,24 @@ describe("POST /api/products", () => {
 
         expect(response.status).toBeGreaterThanOrEqual(400);
         expect(response.status).toBeLessThan(500);
+    });
+});
+
+describe("JWT authentication", () => {
+    it("should reject requests without an authentication token", async () => {
+        const response = await request(app)
+            .get("/api/admin/users");
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
+    });
+
+    it("should reject requests with an invalid authentication token", async () => {
+        const response = await request(app)
+            .get("/api/admin/users")
+            .set("Authorization", "Bearer invalid.token.value");
+
+        expect(response.status).toBe(401);
+        expect(response.body.success).toBe(false);
     });
 });
