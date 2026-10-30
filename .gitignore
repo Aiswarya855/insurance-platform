@@ -16,3 +16,6 @@ migrations-mysql-backup/
 .claude/
 .cursor/
 .devin/
+
+test.db
+test.db-journal

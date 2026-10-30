@@ -3,6 +3,7 @@ import request from "supertest";
 import app from "../app";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import prisma from "../config/prisma";
 
 describe("GET /", () => {
     it("should return API running message", async () => {
@@ -98,12 +99,142 @@ describe("Admin authorization", () => {
     });
 });
 
+describe("Payment webhook signature and processing", () => {
+    let testUserId: number;
+    let testProductId: number;
+    let testQuoteId: number;
+    let testPolicyId: number;
+    let testPaymentId: number;
 
-describe("Payment webhook signature", () => {
-    const payload = {
-        eventId: "test-event-001",
-        paymentId: 999999,
-        status: "SUCCESS",
+    let payload: {
+        event: string;
+        eventId: string;
+        transactionId: string;
+        policyId: number;
+        amount: number;
+        status: string;
+    };
+
+    beforeAll(async () => {
+        // Create test user
+        const user = await prisma.user.create({
+            data: {
+                name: "Webhook Test User",
+                email: `webhook-test-${Date.now()}@example.com`,
+                password: "test-password-hash",
+            },
+        });
+
+        testUserId = user.id;
+
+        // Create test product
+        const product = await prisma.product.create({
+            data: {
+                name: "Webhook Test Product",
+                category: "MOTOR",
+                description: "Product created for webhook testing",
+                basePrice: 10000,
+            },
+        });
+
+        testProductId = product.id;
+
+        // Create test quote
+        const quote = await prisma.quote.create({
+            data: {
+                userId: testUserId,
+                productId: testProductId,
+                coverageAmount: 100000,
+                premium: 9000,
+            },
+        });
+
+        testQuoteId = quote.id;
+
+        // Create test policy
+        const policy = await prisma.policy.create({
+            data: {
+                policyNumber: `TEST-POLICY-${Date.now()}`,
+                userId: testUserId,
+                productId: testProductId,
+                quoteId: testQuoteId,
+                premium: 9000,
+                startDate: new Date(),
+                endDate: new Date(
+                    new Date().setFullYear(new Date().getFullYear() + 1)
+                ),
+            },
+        });
+
+        testPolicyId = policy.id;
+
+        // Create pending payment
+        const payment = await prisma.payment.create({
+            data: {
+                policyId: testPolicyId,
+                transactionId: `TEST-TXN-${Date.now()}`,
+                amount: 9000,
+                status: "PENDING",
+            },
+        });
+
+        testPaymentId = payment.id;
+
+        // Webhook payload
+        payload = {
+            event: "payment.success",
+            eventId: `TEST-EVENT-${Date.now()}`,
+            transactionId: payment.transactionId,
+            policyId: testPolicyId,
+            amount: 9000,
+            status: "SUCCESS",
+        };
+    });
+
+    afterAll(async () => {
+        // Delete only records created by this test
+        if (testPaymentId) {
+            await prisma.payment.deleteMany({
+                where: { id: testPaymentId },
+            });
+        }
+
+        if (testPolicyId) {
+            await prisma.policy.deleteMany({
+                where: { id: testPolicyId },
+            });
+        }
+
+        if (testQuoteId) {
+            await prisma.quote.deleteMany({
+                where: { id: testQuoteId },
+            });
+        }
+
+        if (testProductId) {
+            await prisma.product.deleteMany({
+                where: { id: testProductId },
+            });
+        }
+
+        if (testUserId) {
+            await prisma.user.deleteMany({
+                where: { id: testUserId },
+            });
+        }
+    });
+
+    const createSignature = (body: object) => {
+        const secret = process.env.WEBHOOK_SECRET;
+
+        if (!secret) {
+            throw new Error("WEBHOOK_SECRET is not configured for tests");
+        }
+
+        return crypto
+            .createHmac("sha256", secret)
+            .update(JSON.stringify(body))
+            .digest("hex");
     };
 
     it("should reject a webhook without a signature", async () => {
@@ -125,26 +256,46 @@ describe("Payment webhook signature", () => {
         expect(response.body.message).toBe("Invalid webhook signature");
     });
 
-    it("should accept a webhook with a valid signature", async () => {
-        const secret = process.env.WEBHOOK_SECRET;
-
-        if (!secret) {
-            throw new Error("WEBHOOK_SECRET is not configured for tests");
-        }
-
-        const signature = crypto
-            .createHmac("sha256", secret)
-            .update(JSON.stringify(payload))
-            .digest("hex");
+    it("should process a webhook with a valid signature", async () => {
+        const signature = createSignature(payload);
 
         const response = await request(app)
             .post("/api/webhooks/payment")
             .set("x-webhook-signature", signature)
             .send(payload);
 
-        // Signature verification should pass.
-        // The controller may return another status if the payment doesn't exist.
-        expect(response.status).not.toBe(401);
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.message).toBe(
+            "Payment webhook processed successfully"
+        );
+
+        // Verify payment status in database
+        const updatedPayment = await prisma.payment.findUnique({
+            where: { id: testPaymentId },
+        });
+
+        expect(updatedPayment?.status).toBe("SUCCESS");
+        expect(updatedPayment?.eventId).toBe(payload.eventId);
+
+        // Verify policy status in database
+        const updatedPolicy = await prisma.policy.findUnique({
+            where: { id: testPolicyId },
+        });
+
+        expect(updatedPolicy?.status).toBe("ACTIVE");
+    });
+
+    it("should not process the same webhook event twice", async () => {
+        const signature = createSignature(payload);
+
+        const response = await request(app)
+            .post("/api/webhooks/payment")
+            .set("x-webhook-signature", signature)
+            .send(payload);
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.message).toBe("Webhook already processed");
     });
 });
-
