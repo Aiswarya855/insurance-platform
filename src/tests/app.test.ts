@@ -298,4 +298,22 @@ describe("Payment webhook signature and processing", () => {
         expect(response.body.success).toBe(true);
         expect(response.body.message).toBe("Webhook already processed");
     });
+
+    it("should not process an already successful payment with a different event ID", async () => {
+        const duplicatePayload = {
+            ...payload,
+            eventId: `TEST-EVENT-DIFFERENT-${Date.now()}`,
+        };
+
+        const signature = createSignature(duplicatePayload);
+
+        const response = await request(app)
+            .post("/api/webhooks/payment")
+            .set("x-webhook-signature", signature)
+            .send(duplicatePayload);
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.message).toBe("Payment already completed");
+    });
 });

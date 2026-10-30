@@ -60,6 +60,13 @@ export const paymentWebhook = async (
             });
         }
 
+        if (payment.status === "SUCCESS") {
+            return res.status(200).json({
+                success: true,
+                message: "Payment already completed",
+            });
+        }
+
         // 5. Verify policy matches payment
         if (payment.policyId !== Number(policyId)) {
             return res.status(400).json({
